@@ -123,6 +123,8 @@ export class VideoManager {
         this.preloadVideo(`/avatars/${avatarId}/greeting.mp4`),
         this.preloadVideo(`/avatars/${avatarId}/idle.mp4`)
       ]);
+    } catch (error) {
+      console.error(`Failed to preload videos for avatar ${avatarId}:`, error);
     } finally {
       this.setState({ isLoading: false });
     }

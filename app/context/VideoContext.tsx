@@ -19,45 +19,45 @@ const VideoContext = createContext<VideoContextValue | null>(null);
 
 const AVATARS: Avatar[] = [
   { 
-    id: '1', 
-    name: 'Emma', 
+    id: 'sarah', 
+    name: 'Sarah', 
     description: 'Friendly and professional', 
-    previewUrl: '/avatars/1/preview.jpg',
+    previewUrl: '/avatars/sarah/preview.jpg',
     languages: ['en', 'sw', 'es']
   },
   { 
-    id: '2', 
-    name: 'James', 
+    id: 'michael', 
+    name: 'Michael', 
     description: 'Confident and direct', 
-    previewUrl: '/avatars/2/preview.jpg',
+    previewUrl: '/avatars/michael/preview.jpg',
     languages: ['en', 'sw']
   },
   { 
-    id: '3', 
-    name: 'Sophia', 
+    id: 'james', 
+    name: 'James', 
     description: 'Warm and empathetic', 
-    previewUrl: '/avatars/3/preview.jpg',
+    previewUrl: '/avatars/james/preview.jpg',
     languages: ['en', 'es']
   },
   { 
-    id: '4', 
-    name: 'Lucas', 
+    id: 'emily', 
+    name: 'Emily', 
     description: 'Technical expert', 
-    previewUrl: '/avatars/4/preview.jpg',
+    previewUrl: '/avatars/emily/preview.jpg',
     languages: ['en', 'es']
   },
   { 
-    id: '5', 
-    name: 'Ava', 
+    id: 'lisa', 
+    name: 'Lisa', 
     description: 'Creative and dynamic', 
-    previewUrl: '/avatars/5/preview.jpg',
+    previewUrl: '/avatars/lisa/preview.jpg',
     languages: ['en', 'sw', 'es']
   },
   { 
-    id: '6', 
-    name: 'Noah', 
+    id: 'david', 
+    name: 'David', 
     description: 'Analytical and precise', 
-    previewUrl: '/avatars/6/preview.jpg',
+    previewUrl: '/avatars/david/preview.jpg',
     languages: ['en', 'es']
   }
 ];

@@ -121,13 +121,15 @@ export default function AvatarSelectionPage() {
   const handleSelectAvatar = async (avatar: Avatar) => {
     try {
       await setCurrentAvatar(avatar.id);
-      await playGreeting(avatar.id);
-      
-      // Only navigate after greeting starts playing
+      try {
+        await playGreeting(avatar.id);
+      } catch (err) {
+        console.error('Greeting playback failed, proceeding to call page:', err);
+      }
       router.push('/call');
     } catch (error) {
       console.error('Error selecting avatar:', error);
-      // TODO: Show error toast
+      router.push('/call');
     }
   };
 

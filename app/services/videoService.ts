@@ -47,9 +47,6 @@ class VideoService {
 
   constructor(config: Partial<VideoConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.preloadIdleVideos().catch(error => {
-      console.error('Failed to preload idle videos:', error);
-    });
     this.startCacheCleanup();
   }
 
@@ -80,10 +77,10 @@ class VideoService {
   }
 
   async preloadIdleVideos() {
-    const avatarIds = ['1', '2', '3', '4', '5', '6'];
+    const avatarIds = ['sarah', 'michael', 'james', 'emily', 'lisa', 'david'];
     for (const id of avatarIds) {
-      const idleVideo = `/avatars/${id}-idle.mp4`;
-      const thinkingVideo = `/avatars/${id}-thinking.mp4`;
+      const idleVideo = `/avatars/${id}/idle.mp4`;
+      const thinkingVideo = `/avatars/${id}/greeting.mp4`;
       
       // Try to preload with retries
       let loaded = false;
@@ -166,8 +163,8 @@ class VideoService {
             // 3. Cache the result
             if (!this.videoCache[avatarId]) {
               this.videoCache[avatarId] = {
-                idle: `/avatars/${avatarId}-idle.mp4`,
-                thinking: `/avatars/${avatarId}-thinking.mp4`,
+                idle: `/avatars/${avatarId}/idle.mp4`,
+                thinking: `/avatars/${avatarId}/greeting.mp4`,
                 talking: {}
               };
             }
@@ -185,8 +182,8 @@ class VideoService {
               reject(new Error('Video generation interrupted'));
             } else {
               console.error('Error generating talking video:', error);
-              // Fallback to a generic talking video
-              resolve(`/avatars/${avatarId}-talking.mp4`);
+              // Fallback to greeting clip to avoid blocking the UI
+              resolve(`/avatars/${avatarId}/greeting.mp4`);
             }
           }
         } catch (error) {
@@ -259,11 +256,11 @@ class VideoService {
   }
 
   getThinkingVideo(avatarId: string): string {
-    return this.videoCache[avatarId]?.thinking || `/avatars/${avatarId}-thinking.mp4`;
+    return this.videoCache[avatarId]?.thinking || `/avatars/${avatarId}/greeting.mp4`;
   }
 
   getIdleVideo(avatarId: string): string {
-    return this.videoCache[avatarId]?.idle || `/avatars/${avatarId}-idle.mp4`;
+    return this.videoCache[avatarId]?.idle || `/avatars/${avatarId}/idle.mp4`;
   }
 
   isVideoReady(avatarId: string, text: string): boolean {

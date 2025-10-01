@@ -117,7 +117,7 @@ export default function CallPage() {
     if (selectedAvatarId) {
       videoManager.setCurrentAvatar(selectedAvatarId);
     }
-  }, [selectedAvatarId, videoManager]);
+  }, [selectedAvatarId]);
 
   if (!selectedAvatarId) {
     router.push('/avatar');

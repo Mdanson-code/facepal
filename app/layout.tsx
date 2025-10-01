@@ -2,6 +2,8 @@
 
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
+import { VideoProvider } from './context/VideoContext';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,7 +25,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
-            {children}
+          <ToastProvider>
+            <VideoProvider>
+              {children}
+            </VideoProvider>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>
