@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useVideo, useAvatars, type Avatar } from '../context/VideoContext';
 import { useTheme } from '../context/ThemeContext';
-import { useLanguage } from '../context/LanguageContext';
+import { useInteraction } from '../hooks/useInteraction';
 import VoiceInput from '../components/VoiceInput';
 
 
@@ -76,11 +76,10 @@ export default function AvatarSelectionPage() {
 
   const { 
     supportedLanguages, 
-    detectedLanguage, 
-    setDetectedLanguage,
-    isProcessingVoice, 
-    transcribedText 
-  } = useLanguage();
+    currentLanguage: detectedLanguage,
+    setLanguage,
+    state 
+  } = useInteraction();
 
   const [isListening, setIsListening] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
@@ -162,7 +161,7 @@ export default function AvatarSelectionPage() {
           <div className="mt-6 flex items-center justify-center gap-4">
             <select
               value={detectedLanguage}
-              onChange={(e) => setDetectedLanguage(e.target.value)}
+              onChange={(e) => setLanguage(e.target.value)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
                 ${darkMode 
                   ? 'bg-gray-900 text-gray-300 border border-gray-800' 

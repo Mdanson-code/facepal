@@ -1,20 +1,19 @@
+import { interactionService } from './interactionService';
+
 interface AIResponse {
   text: string;
   language: string;
   confidence: number;
 }
 
-import { aiInputProcessor } from './inputProcessor';
-
 class AIService {
   private async callAI(text: string, language: string): Promise<AIResponse> {
     try {
-      // Process input using the input processor
-      const response = await aiInputProcessor.processText(text, language);
+      const result = await interactionService.processInput(text, 'text', language);
       
       return {
-        text: response,
-        language: language,
+        text: result.text,
+        language: result.language,
         confidence: 0.95
       };
     } catch (error) {
@@ -34,7 +33,11 @@ class AIService {
 
   async processVoiceInput(audioBlob: Blob): Promise<{ text: string; language: string }> {
     try {
-      return await aiInputProcessor.processVoice(audioBlob);
+      const result = await interactionService.processInput(audioBlob, 'voice');
+      return {
+        text: result.text,
+        language: result.language
+      };
     } catch (error) {
       console.error('Error processing voice input:', error);
       throw error;

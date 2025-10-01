@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useLanguage } from '../context/LanguageContext';
+import { useInteraction } from '../hooks/useInteraction';
+import { aiService } from '../services/aiService';
 
 interface VoiceInputProps {
   onInputProcessed?: (text: string) => void;
@@ -21,7 +22,7 @@ export default function VoiceInput({
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   
-  const { setIsProcessingVoice, setTranscribedText } = useLanguage();
+  const interaction = useInteraction();
 
   const startListening = async () => {
     try {
@@ -59,20 +60,11 @@ export default function VoiceInput({
 
   const processAudioInput = async (audioBlob: Blob) => {
     try {
-      setIsProcessingVoice(true);
-      
-      // Use AI service to process voice input
-      const { text, language } = await aiService.processVoiceInput(audioBlob);
-      
-      // Update transcribed text and detected language
-      setTranscribedText(text);
-      onInputProcessed?.(text);
-      
+      const result = await interaction.processInput(audioBlob, 'voice');
+      onInputProcessed?.(result.text);
     } catch (err) {
       console.error('Error processing audio:', err);
       setError('Could not process audio. Please try again.');
-    } finally {
-      setIsProcessingVoice(false);
     }
   };
 

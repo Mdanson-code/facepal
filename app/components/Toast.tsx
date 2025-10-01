@@ -1,17 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
-
-interface Toast {
-  id: string;
-  message: string;
-  type: 'info' | 'warning' | 'error';
-}
+import type { Toast, ToastType } from '../types';
 
 interface ToastProps {
   message: string;
-  type: 'info' | 'warning' | 'error';
+  type: ToastType;
   onClose: () => void;
 }
 

@@ -1,8 +1,14 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import type { Toast, ToastType } from '../types';
+
+interface ToastProps {
+  message: string;
+  type: ToastType;
+  onClose: () => void;
+}
 
 interface ToastContextValue {
   showToast: (message: string, type?: ToastType) => void;
@@ -50,39 +56,53 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ToastManager() {
-  const { toasts, dismissToast } = useToast();
+function Toast({ message, type, onClose }: ToastProps) {
   const { darkMode } = useTheme();
+  
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`px-4 py-3 rounded-lg shadow-lg backdrop-blur-sm backdrop-saturate-150
+      transition-all duration-300 ease-out
+      ${darkMode 
+        ? 'bg-gray-900/90 text-gray-100 border border-gray-800/50' 
+        : 'bg-white/90 text-gray-900 border border-gray-200/50'}`}>
+      <div className="flex items-center space-x-2">
+        {type === 'warning' && (
+          <span role="img" aria-label="warning" className="text-yellow-500">⚠️</span>
+        )}
+        {type === 'error' && (
+          <span role="img" aria-label="error" className="text-red-500">❌</span>
+        )}
+        {type === 'info' && (
+          <span role="img" aria-label="info" className="text-blue-500">ℹ️</span>
+        )}
+        {type === 'success' && (
+          <span role="img" aria-label="success" className="text-green-500">✅</span>
+        )}
+        <p className="text-sm font-medium">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function ToastManager(): JSX.Element {
+  const { toasts, dismissToast } = useToast();
 
   if (toasts.length === 0) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-50 space-y-2">
-      {toasts.map(toast => (
-        <div
-          key={toast.id}
-          className={`px-4 py-3 rounded-lg shadow-lg max-w-sm transform transition-all duration-300
-            ${darkMode ? 'bg-gray-800' : 'bg-white'}
-            ${toast.type === 'info' 
-              ? darkMode ? 'text-blue-300' : 'text-blue-600'
-              : toast.type === 'warning'
-              ? darkMode ? 'text-yellow-300' : 'text-yellow-600'
-              : toast.type === 'success'
-              ? darkMode ? 'text-green-300' : 'text-green-600'
-              : darkMode ? 'text-red-300' : 'text-red-600'}`}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">{toast.message}</p>
-            <button
-              onClick={() => dismissToast(toast.id)}
-              className="ml-4 text-gray-400 hover:text-gray-500 focus:outline-none"
-            >
-              <span className="sr-only">Close</span>
-              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
+      {toasts.map((toast) => (
+        <div key={toast.id} className="transform transition-all duration-300">
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => dismissToast(toast.id)}
+          />
         </div>
       ))}
     </div>

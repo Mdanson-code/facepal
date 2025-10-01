@@ -1,4 +1,5 @@
-// Video state and processing service
+import { interactionService } from './interactionService';
+
 interface VideoCache {
   idle: string;
   thinking: string;
@@ -6,41 +7,22 @@ interface VideoCache {
 }
 
 interface VideoConfig {
-  maxCacheSize: number;        // Maximum number of videos to cache per avatar
-  cacheExpiryMs: number;      // Time in ms after which cache entries expire
-  preloadRetries: number;     // Number of times to retry preloading
-  generateTimeout: number;    // Timeout for video generation in ms
-  retryDelay: number;        // Delay between retries in ms
+  maxCacheSize: number;
+  cacheExpiryMs: number;
+  preloadRetries: number;
+  generateTimeout: number;
+  retryDelay: number;
 }
 
 const DEFAULT_CONFIG: VideoConfig = {
   maxCacheSize: 50,
-  cacheExpiryMs: 24 * 60 * 60 * 1000, // 24 hours
+  cacheExpiryMs: 24 * 60 * 60 * 1000,
   preloadRetries: 3,
-  generateTimeout: 30000, // 30 seconds
-  retryDelay: 1000 // 1 second
-};rocessing service
-interface VideoCache {
-  idle: string;
-  thinking: string;
-  talking: { [key: string]: { url: string; timestamp: number } };  // Cache talking videos with timestamp
-}
-
-interface VideoConfig {
-  maxCacheSize: number;        // Maximum number of videos to cache per avatar
-  cacheExpiryMs: number;      // Time in ms after which cache entries expire
-  preloadRetries: number;     // Number of times to retry preloading
-  generateTimeout: number;    // Timeout for video generation in ms
-}
-
-const DEFAULT_CONFIG: VideoConfig = {
-  maxCacheSize: 50,
-  cacheExpiryMs: 24 * 60 * 60 * 1000, // 24 hours
-  preloadRetries: 3,
-  generateTimeout: 30000 // 30 seconds
+  generateTimeout: 30000,
+  retryDelay: 1000
 };
 
-type VideoState = 'idle' | 'thinking' | 'talking';
+type VideoState = 'idle' | 'thinking' | 'talking' | 'greeting' | 'response';
 
 interface VideoStateCallback {
   (avatarId: string, state: VideoState, meta?: { responseId?: string }): void;
@@ -54,15 +36,6 @@ interface VideoTransition {
   interrupted?: boolean;
 }
 
-interface VideoProcessingQueue {
-  avatarId: string;
-  text: string;
-  language: string;
-  responseId: string;
-  resolve: (url: string) => void;
-  reject: (error: Error) => void;
-}
-
 class VideoService {
   private videoCache: { [avatarId: string]: VideoCache } = {};
   private videoStates: { [avatarId: string]: VideoState } = {};
@@ -70,7 +43,6 @@ class VideoService {
   private currentTransition: VideoTransition | null = null;
   private processingQueue: Promise<unknown> = Promise.resolve();
   private currentAvatarId: string | null = null;
-  private interruptController: AbortController | null = null;
   private config: VideoConfig;
 
   constructor(config: Partial<VideoConfig> = {}) {
@@ -107,10 +79,6 @@ class VideoService {
     });
   }
 
-  constructor() {
-    this.preloadIdleVideos();
-  }
-
   async preloadIdleVideos() {
     const avatarIds = ['1', '2', '3', '4', '5', '6'];
     for (const id of avatarIds) {
@@ -129,7 +97,7 @@ class VideoService {
         } catch (error) {
           console.error(`Failed to preload videos for avatar ${id}, attempt ${attempt + 1}:`, error);
           if (attempt === this.config.preloadRetries - 1) throw error;
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay * (attempt + 1)));
         }
       }
 
@@ -155,8 +123,11 @@ class VideoService {
   }
 
   async generateTalkingVideo(avatarId: string, text: string, language: string, responseId: string): Promise<string> {
-    this.interruptController = new AbortController();
-    const signal = this.interruptController.signal;
+    // Check for interruptions
+    const interactionState = interactionService.getState();
+    if (interactionState.interruptCount > 0) {
+      throw new Error('Video generation interrupted');
+    }
 
     // Check cache first
     const cached = this.videoCache[avatarId]?.talking[text];
@@ -174,25 +145,23 @@ class VideoService {
           }, this.config.generateTimeout);
 
           try {
-    // Check cache first
-    if (this.videoCache[avatarId]?.talking[text]) {
-      return this.videoCache[avatarId].talking[text];
-    }
-
-    // Queue the video generation to prevent multiple simultaneous generations
-    this.processingQueue = this.processingQueue.then(async () => {
-      try {
-        // 1. Generate TTS audio if needed
-        const audioUrl = await this.generateTTS(text, language);
-
-        // 2. Generate lip-synced video using Wav2Lip or similar
             // 1. Generate TTS audio
             const audioUrl = await this.generateTTS(text, language);
-            if (signal.aborted) throw new Error('Aborted');
+            
+            // Check for interruption
+            const currentState = interactionService.getState();
+            if (currentState.interruptCount > 0) {
+              throw new Error('Video generation interrupted');
+            }
 
             // 2. Generate lip-synced video
             const talkingVideoUrl = await this.lipSync(avatarId, audioUrl, text);
-            if (signal.aborted) throw new Error('Aborted');
+            
+            // Check for interruption again
+            const finalState = interactionService.getState();
+            if (finalState.interruptCount > 0) {
+              throw new Error('Video generation interrupted');
+            }
 
             // 3. Cache the result
             if (!this.videoCache[avatarId]) {
@@ -212,7 +181,7 @@ class VideoService {
             resolve(talkingVideoUrl);
           } catch (error) {
             clearTimeout(timeoutId);
-            if ((error as Error).message === 'Aborted') {
+            if ((error as Error).message === 'Video generation interrupted') {
               reject(new Error('Video generation interrupted'));
             } else {
               console.error('Error generating talking video:', error);
@@ -223,8 +192,8 @@ class VideoService {
         } catch (error) {
           reject(error);
         }
-      }).catch(reject);
-    });    return this.processingQueue;
+      });
+    });
   }
 
   private async generateTTS(text: string, language: string): Promise<string> {
@@ -245,12 +214,6 @@ class VideoService {
 
   async switchToTalking(avatarId: string, text: string, language: string, responseId: string): Promise<string> {
     this.currentAvatarId = avatarId;
-    
-    // If there's a current video playing, interrupt it
-    if (this.interruptController) {
-      this.interruptController.abort();
-      this.interruptController = null;
-    }
 
     // Update state to thinking while generating
     this.updateState(avatarId, 'thinking', { responseId });
@@ -260,21 +223,14 @@ class VideoService {
       this.updateState(avatarId, 'talking', { responseId });
       return videoUrl;
     } catch (error) {
-      if ((error as any)?.name === 'AbortError') {
-        // Request was interrupted, revert to idle
-        this.updateState(avatarId, 'idle');
-        throw new Error('Video generation interrupted');
-      }
+      // Request was interrupted, revert to idle
+      this.updateState(avatarId, 'idle');
       throw error;
     }
   }
 
   interrupt(): void {
-    if (this.interruptController) {
-      this.interruptController.abort();
-      this.interruptController = null;
-    }
-    
+    interactionService.interrupt();
     if (this.currentAvatarId) {
       this.updateState(this.currentAvatarId, 'idle');
     }

@@ -3,137 +3,98 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '../context/ThemeContext';
-import { useLanguage } from '../context/LanguageContext';
-import { useVideo } from '../context/VideoContext';
+// Language handling now comes from useInteraction
 import { useToast } from '../context/ToastContext';
-import { videoService } from '../services/videoService';
-import { aiService } from '../services/aiService';
-import { interactionManager } from '../services/interactionManager';
+import { useInteraction } from '../hooks/useInteraction';
+import { useVideoManager } from '../hooks/useVideoManager';
+import { interactionService } from '../services/interactionService';
 import type { Message } from '../types/message';
 import type { VideoState } from '../types';
+import type { SupportedLanguage } from '../types/language';
 import VoiceInput from '../components/VoiceInput';
 import ImageUpload from '../components/ImageUpload';
 import ToastManager from '../components/ToastManager';
-import { useTheme } from '../context/ThemeContext';
-import { useLanguage } from '../context/LanguageContext';
-import { useVideo } from '../context/VideoContext';
-import { useToast } from '../context/ToastContext';
-import { videoService } from '../services/videoService';
-import { aiService } from '../services/aiService';
-import { interactionManager } from '../services/interactionManager';
-import { preloadVideo, cleanupVideo } from '../services/videoService';
-import { useInteractionManager } from '../services/interactionManager';
-import { generateAIResponse } from '../services/aiService';
-import type { Message } from '../types/message';
-import type { Toast, VideoState } from '../types';
-import VoiceInput from '../components/VoiceInput';
-import ImageUpload from '../components/ImageUpload';
-import ToastManager from '../components/ToastManager';
-
-interface VideoResponse {
-  videoUrl: string;
-  cached: boolean;
-}
 
 export default function CallPage() {
   const router = useRouter();
   const { darkMode } = useTheme();
   const { showToast } = useToast();
-  const { 
-    detectedLanguage, 
-    setDetectedLanguage,
-    supportedLanguages,
-    isProcessingVoice,
-    transcribedText,
-    setTranscribedText 
-  } = useLanguage();
+  const [supportedLanguages] = useState<SupportedLanguage[]>(
+    interactionService.getSupportedLanguages()
+  );
+  
+  const interaction = useInteraction({
+    onError: (error) => {
+      console.error('Interaction error:', error);
+      showToast(error.message, 'error');
+    }
+  });
+
+  const videoManager = useVideoManager();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [isListening, setIsListening] = useState(false);
-  const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
-  const [avatarVideoState, setAvatarVideoState] = useState<VideoState>('idle');
   const [textInput, setTextInput] = useState('');
+  
   const selectedAvatarId = typeof window !== 'undefined' 
     ? localStorage.getItem('selectedAvatar') 
     : null;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Handle new user input (text or voice)
   const processImageInput = async (file: File): Promise<string> => {
-    return `[Image uploaded: ${file.name}]`;
+    const result = await interaction.processInput(file, 'image');
+    return result.text;
   };
 
   const handleUserInput = async (input: string | File) => {
-    let processedText = '';
-    const interaction = useInteractionManager();
-    
     try {
-      if (input instanceof File) {
-        processedText = await processImageInput(input);
-      } else {
-        processedText = input;
-      }
-
-      // Handle interruptions
-      if (interaction.state.interruptCount > 3) {
-        showToast('Please let me finish my response first! �', 'warning');
+      // Check for interruptions first
+      if (interaction.state.interruptCount >= 3) {
+        showToast('Please let me finish my current response', 'warning');
         return;
       }
 
-      // Stop current response if any
-      if (videoRef.current && selectedAvatarId) {
-        cleanupVideo(videoRef.current);
-        const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
-        videoRef.current.src = idleVideoUrl;
-        setAvatarVideoState('idle');
+      // Stop current response if any, signaling this is a user interrupt
+      videoManager.interruptCurrentVideo(true);
+
+      // Process the input
+      let result;
+      if (input instanceof File) {
+        const processedText = await processImageInput(input);
+        result = await interaction.processInput(processedText, 'text');
+      } else {
+        result = await interaction.processInput(input, 'text');
       }
 
       // Add user message
       const userMessage: Message = {
         id: Date.now().toString(),
-        text: processedText,
+        text: input instanceof File ? `[Image: ${input.name}]` : input,
         sender: 'user',
         timestamp: Date.now(),
-        language: detectedLanguage
+        language: interaction.state.currentLanguage
       };
       setMessages(prev => [...prev, userMessage]);
 
-      // Generate AI response
-      setIsGeneratingResponse(true);
-
-      // Generate AI response
-      const aiResponse = await generateAIResponse(processedText, detectedLanguage);
-      
       // Add AI message
       const aiMessage: Message = {
         id: Date.now().toString(),
-        text: aiResponse.text,
+        text: result.text,
         sender: 'ai',
         timestamp: Date.now(),
-        language: aiResponse.language
+        language: result.language
       };
       setMessages(prev => [...prev, aiMessage]);
 
-      // Update video source and state
-      if (videoRef.current) {
-        videoRef.current.src = aiResponse.videoUrl;
-        setAvatarVideoState('responding');
-        
-        // Listen for video end to switch back to idle
-        videoRef.current.onended = () => {
-          if (videoRef.current && selectedAvatarId) {
-            const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
-            videoRef.current.src = idleVideoUrl;
-            setAvatarVideoState('idle');
-          }
-        };
+      // Update video
+      if (selectedAvatarId) {
+        await videoManager.playResponse(result.text, result.language);
       }
+
     } catch (error) {
-      console.error('Error generating response:', error);
-    } finally {
-      setIsGeneratingResponse(false);
+      console.error('Error handling user input:', error);
+      showToast((error as Error).message, 'error');
     }
   };
 
@@ -144,38 +105,26 @@ export default function CallPage() {
     }
   }, [messages]);
 
-  // Handle transcribed voice input
+  // Handle transcribed voice input from interaction service
   useEffect(() => {
-    if (transcribedText) {
-      handleUserInput(transcribedText);
+    if (interaction.state.transcribedText) {
+      handleUserInput(interaction.state.transcribedText);
     }
-  }, [transcribedText]);
+  }, [interaction.state.transcribedText]);
 
-  // Preload idle video on mount and cleanup on unmount
+  // Set up video manager with avatar
   useEffect(() => {
-    if (selectedAvatarId && videoRef.current) {
-      const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
-      preloadVideo(idleVideoUrl)
-        .then(() => {
-          if (videoRef.current) {
-            videoRef.current.src = idleVideoUrl;
-          }
-        })
-        .catch((error: Error) => {
-          console.error('Error preloading idle video:', error);
-        });
+    if (selectedAvatarId) {
+      videoManager.setCurrentAvatar(selectedAvatarId);
     }
-
-    return () => {
-      cleanupVideo(videoRef.current);
-    };
-  }, [selectedAvatarId]);
+  }, [selectedAvatarId, videoManager]);
 
   if (!selectedAvatarId) {
     router.push('/avatar');
     return null;
   }
 
+  const isDisabled = interaction.state.isProcessing || isListening;
 
   return (
     <main className={`min-h-screen ${darkMode ? 'bg-black' : 'bg-white'}`}>
@@ -184,8 +133,7 @@ export default function CallPage() {
         <div className="relative aspect-video w-full max-h-[60vh] rounded-2xl overflow-hidden 
           shadow-lg mb-6">
           <video
-            ref={videoRef}
-            src={`/avatars/${selectedAvatarId}-${avatarVideoState}.mp4`}
+            ref={videoManager.videoRef}
             className="w-full h-full object-cover"
             autoPlay
             muted
@@ -200,9 +148,9 @@ export default function CallPage() {
           className={`flex-1 overflow-y-auto rounded-lg p-4 mb-4
             ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}
         >
-          {messages.map((message, index) => (
+          {messages.map((message) => (
             <div
-              key={index}
+              key={message.id}
               className={`mb-4 flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`max-w-[80%] rounded-lg px-4 py-2
@@ -231,24 +179,24 @@ export default function CallPage() {
         <div className="flex items-center gap-4">
           <ImageUpload
             onImageSelect={(file) => handleUserInput(file)}
-            disabled={isGeneratingResponse || isListening}
+            disabled={isDisabled}
           />
           <input
             type="text"
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             onKeyPress={(e) => {
-              if (e.key === 'Enter' && textInput.trim() && !isGeneratingResponse) {
+              if (e.key === 'Enter' && textInput.trim() && !isDisabled) {
                 handleUserInput(textInput);
                 setTextInput('');
               }
             }}
-            placeholder={`Type a message in ${supportedLanguages.find(l => l.code === detectedLanguage)?.name}...`}
+            placeholder={`Type a message in ${supportedLanguages.find(l => l.code === interaction.state.currentLanguage)?.name}...`}
             className={`flex-1 px-4 py-3 rounded-lg transition-colors
               ${darkMode
                 ? 'bg-gray-900 text-gray-300 border border-gray-800 focus:border-gray-700'
                 : 'bg-white text-gray-700 border border-gray-200 focus:border-gray-300'}`}
-            disabled={isGeneratingResponse || isListening}
+            disabled={isDisabled}
           />
           <button
             onClick={() => setIsListening(!isListening)}
@@ -256,7 +204,7 @@ export default function CallPage() {
               ${isListening 
                 ? 'bg-red-500 text-white animate-pulse' 
                 : `${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}`}
-            disabled={isGeneratingResponse}
+            disabled={interaction.state.isProcessing}
           >
             <svg className="w-6 h-6" fill="none" strokeLinecap="round" 
                  strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -265,13 +213,13 @@ export default function CallPage() {
           </button>
 
           <select
-            value={detectedLanguage}
-            onChange={(e) => setDetectedLanguage(e.target.value)}
+            value={interaction.state.currentLanguage}
+            onChange={(e) => interaction.setLanguage(e.target.value)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
               ${darkMode 
                 ? 'bg-gray-900 text-gray-300 border border-gray-800' 
                 : 'bg-white text-gray-700 border border-gray-200'}`}
-            disabled={isGeneratingResponse || isListening}
+            disabled={isDisabled}
           >
             {supportedLanguages.map(lang => (
               <option key={lang.code} value={lang.code}>
