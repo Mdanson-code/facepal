@@ -4,10 +4,28 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
-import { toast } from 'react-hot-toast';
+import { useVideo } from '../context/VideoContext';
+import { useToast } from '../context/ToastContext';
 import { videoService } from '../services/videoService';
-import { interactionManager } from '../services/interactionManager';
 import { aiService } from '../services/aiService';
+import { interactionManager } from '../services/interactionManager';
+import type { Message } from '../types/message';
+import type { VideoState } from '../types';
+import VoiceInput from '../components/VoiceInput';
+import ImageUpload from '../components/ImageUpload';
+import ToastManager from '../components/ToastManager';
+import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { useVideo } from '../context/VideoContext';
+import { useToast } from '../context/ToastContext';
+import { videoService } from '../services/videoService';
+import { aiService } from '../services/aiService';
+import { interactionManager } from '../services/interactionManager';
+import { preloadVideo, cleanupVideo } from '../services/videoService';
+import { useInteractionManager } from '../services/interactionManager';
+import { generateAIResponse } from '../services/aiService';
+import type { Message } from '../types/message';
+import type { Toast, VideoState } from '../types';
 import VoiceInput from '../components/VoiceInput';
 import ImageUpload from '../components/ImageUpload';
 import ToastManager from '../components/ToastManager';
@@ -17,22 +35,10 @@ interface VideoResponse {
   cached: boolean;
 }
 
-interface Message {
-  text: string;
-  timestamp: Date;
-  isUser: boolean;
-  language: string;
-}
-
-interface VideoResponse {
-  videoUrl: string;
-  cached: boolean;
-}
-
 export default function CallPage() {
   const router = useRouter();
   const { darkMode } = useTheme();
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'info' | 'warning' | 'error' }>>([]);
+  const { showToast } = useToast();
   const { 
     detectedLanguage, 
     setDetectedLanguage,
@@ -45,7 +51,7 @@ export default function CallPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
-  const [avatarVideoState, setAvatarVideoState] = useState<'idle' | 'talking'>('idle');
+  const [avatarVideoState, setAvatarVideoState] = useState<VideoState>('idle');
   const [textInput, setTextInput] = useState('');
   const selectedAvatarId = typeof window !== 'undefined' 
     ? localStorage.getItem('selectedAvatar') 
@@ -61,6 +67,7 @@ export default function CallPage() {
 
   const handleUserInput = async (input: string | File) => {
     let processedText = '';
+    const interaction = useInteractionManager();
     
     try {
       if (input instanceof File) {
@@ -69,25 +76,26 @@ export default function CallPage() {
         processedText = input;
       }
 
-      // Check for interruption
-      const { shouldWarn, message } = interactionManager.checkInterruption();
-      if (shouldWarn && message) {
-        const toastId = Date.now().toString();
-        setToasts(prev => [...prev, { id: toastId, message, type: 'warning' }]);
+      // Handle interruptions
+      if (interaction.state.interruptCount > 3) {
+        showToast('Please let me finish my response first! �', 'warning');
+        return;
       }
 
       // Stop current response if any
       if (videoRef.current && selectedAvatarId) {
-        videoRef.current.src = videoService.getIdleVideo(selectedAvatarId);
+        cleanupVideo(videoRef.current);
+        const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
+        videoRef.current.src = idleVideoUrl;
         setAvatarVideoState('idle');
       }
-      interactionManager.endResponse();
 
       // Add user message
       const userMessage: Message = {
+        id: Date.now().toString(),
         text: processedText,
-        timestamp: new Date(),
-        isUser: true,
+        sender: 'user',
+        timestamp: Date.now(),
         language: detectedLanguage
       };
       setMessages(prev => [...prev, userMessage]);
@@ -95,52 +103,29 @@ export default function CallPage() {
       // Generate AI response
       setIsGeneratingResponse(true);
 
-      // Call generate API
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: processedText,
-          avatarId: selectedAvatarId
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
-      }
-
-      const { videoUrl, cached } = await response.json() as VideoResponse;
-      const responseId = Date.now().toString();
-      interactionManager.startResponse(responseId);
+      // Generate AI response
+      const aiResponse = await generateAIResponse(processedText, detectedLanguage);
       
       // Add AI message
       const aiMessage: Message = {
-        text: inputText, // We'll show what the avatar is saying
-        timestamp: new Date(),
-        isUser: false,
-        language: detectedLanguage
+        id: Date.now().toString(),
+        text: aiResponse.text,
+        sender: 'ai',
+        timestamp: Date.now(),
+        language: aiResponse.language
       };
       setMessages(prev => [...prev, aiMessage]);
 
       // Update video source and state
       if (videoRef.current) {
-        videoRef.current.src = videoUrl;
-        setAvatarVideoState('talking');
-        
-        // Show toast for cached responses
-        if (cached) {
-          const toastId = Date.now().toString();
-          setToasts(prev => [...prev, { 
-            id: toastId, 
-            message: 'Playing from cache', 
-            type: 'info' 
-          }]);
-        }
+        videoRef.current.src = aiResponse.videoUrl;
+        setAvatarVideoState('responding');
         
         // Listen for video end to switch back to idle
         videoRef.current.onended = () => {
-          if (videoRef.current) {
-            videoRef.current.src = `/avatars/${selectedAvatarId}/idle.mp4`;
+          if (videoRef.current && selectedAvatarId) {
+            const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
+            videoRef.current.src = idleVideoUrl;
             setAvatarVideoState('idle');
           }
         };
@@ -166,11 +151,24 @@ export default function CallPage() {
     }
   }, [transcribedText]);
 
-  // Preload idle video on mount
+  // Preload idle video on mount and cleanup on unmount
   useEffect(() => {
     if (selectedAvatarId && videoRef.current) {
-      videoRef.current.src = videoService.getIdleVideo(selectedAvatarId);
+      const idleVideoUrl = `/avatars/${selectedAvatarId}/idle.mp4`;
+      preloadVideo(idleVideoUrl)
+        .then(() => {
+          if (videoRef.current) {
+            videoRef.current.src = idleVideoUrl;
+          }
+        })
+        .catch((error: Error) => {
+          console.error('Error preloading idle video:', error);
+        });
     }
+
+    return () => {
+      cleanupVideo(videoRef.current);
+    };
   }, [selectedAvatarId]);
 
   if (!selectedAvatarId) {
@@ -178,9 +176,6 @@ export default function CallPage() {
     return null;
   }
 
-  const dismissToast = (id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  };
 
   return (
     <main className={`min-h-screen ${darkMode ? 'bg-black' : 'bg-white'}`}>
@@ -208,10 +203,10 @@ export default function CallPage() {
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`mb-4 flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+              className={`mb-4 flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`max-w-[80%] rounded-lg px-4 py-2
-                ${message.isUser 
+                ${message.sender === 'user' 
                   ? darkMode 
                     ? 'bg-blue-500 text-white' 
                     : 'bg-blue-100 text-blue-900'
@@ -221,7 +216,7 @@ export default function CallPage() {
               >
                 <p className="text-sm">{message.text}</p>
                 <p className={`text-xs mt-1 
-                  ${message.isUser 
+                  ${message.sender === 'user' 
                     ? darkMode ? 'text-blue-200' : 'text-blue-700'
                     : darkMode ? 'text-gray-500' : 'text-gray-500'}`}
                 >
@@ -291,10 +286,7 @@ export default function CallPage() {
           onListeningChange={setIsListening}
           className="sr-only"
         />
-        <ToastManager
-          toasts={toasts}
-          onDismiss={dismissToast}
-        />
+        <ToastManager />
       </div>
     </main>
   );
