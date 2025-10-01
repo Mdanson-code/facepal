@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useVideo, useAvatars, type Avatar } from '../context/VideoContext';
@@ -10,21 +10,86 @@ import VoiceInput from '../components/VoiceInput';
 
 
 
+function AvatarCard({ avatar, isSelected, onSelect, isLoading }: {
+  avatar: Avatar;
+  isSelected: boolean;
+  onSelect: (avatar: Avatar) => void;
+  isLoading: boolean;
+}) {
+  const { darkMode } = useTheme();
+
+  return (
+    <button
+      onClick={() => onSelect(avatar)}
+      className={`group relative aspect-video w-full rounded-xl overflow-hidden transition-all duration-200
+        ${isSelected 
+          ? 'ring-4 ring-blue-500 scale-[1.02]' 
+          : 'hover:scale-[1.01] focus:scale-[1.01]'}
+        ${darkMode ? 'bg-gray-800' : 'bg-white'}
+        shadow-lg hover:shadow-xl focus:shadow-xl`}
+    >
+      <Image
+        src={avatar.previewUrl}
+        alt={avatar.name}
+        className="object-cover w-full h-full transition-opacity duration-200 
+          group-hover:opacity-90"
+        width={320}
+        height={180}
+        priority
+      />
+      <div className={`absolute bottom-0 left-0 right-0 p-4
+        bg-gradient-to-t ${darkMode 
+          ? 'from-black/80 to-transparent' 
+          : 'from-white/80 to-transparent'}`}
+      >
+        <h3 className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+          {avatar.name}
+        </h3>
+        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+          {avatar.description}
+        </p>
+      </div>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center 
+          bg-black/50 rounded-xl">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
+        </div>
+      )}
+    </button>
+  );
+}
+
 export default function AvatarSelectionPage() {
   const router = useRouter();
   const { darkMode } = useTheme();
-  const { supportedLanguages, detectedLanguage, setDetectedLanguage, isProcessingVoice, transcribedText } = useLanguage();
-  const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
+  const { 
+    currentAvatarId,
+    videoState,
+    isLoading,
+    setCurrentAvatar,
+    playGreeting,
+    videoRef
+  } = useVideo();
+  const avatars = useAvatars();
+
+  const { 
+    supportedLanguages, 
+    detectedLanguage, 
+    setDetectedLanguage,
+    isProcessingVoice, 
+    transcribedText 
+  } = useLanguage();
+
+  const [isListening, setIsListening] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [avatars, setAvatars] = useState<AvatarWithLoadState[]>(AVATARS_WITH_STATE);
-  const [preloading, setPreloading] = useState(true);
   
   const webcamRef = useRef<HTMLVideoElement>(null);
-  const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
 
-  // Request camera and microphone permissions
+  // Initialize camera and mic permissions
   const requestPermissions = async () => {
     try {
       setPermissionError(false);
@@ -44,7 +109,7 @@ export default function AvatarSelectionPage() {
     }
   };
 
-  // Cleanup function for media streams
+  // Cleanup media streams
   useEffect(() => {
     return () => {
       if (stream) {
@@ -53,108 +118,47 @@ export default function AvatarSelectionPage() {
     };
   }, [stream]);
 
-  // Preload and track loading state of avatar videos
-  useEffect(() => {
-    const preloadVideos = async () => {
-      setPreloading(true);
+  // Handle avatar selection
+  const handleSelectAvatar = async (avatar: Avatar) => {
+    try {
+      await setCurrentAvatar(avatar.id);
+      await playGreeting(avatar.id);
       
-      const preloadPromises = avatars.map((avatar, index) => {
-        return new Promise<void>((resolve, reject) => {
-          // Preload both idle and greeting videos
-          const idleVideo = document.createElement('video');
-          const greetingVideo = document.createElement('video');
-          
-          // Configure video elements
-          [idleVideo, greetingVideo].forEach(video => {
-            video.preload = 'auto';
-            video.muted = true;
-            video.playsInline = true;
-          });
-          
-          idleVideo.src = avatar.idleUrl;
-          greetingVideo.src = avatar.greetingUrl;
-          
-          // Track loading progress
-          let loadedCount = 0;
-          const handleLoad = () => {
-            loadedCount++;
-            if (loadedCount === 2) {
-              setAvatars(prev => prev.map(a => 
-                a.id === avatar.id ? { ...a, loadState: 'loaded' } : a
-              ));
-              
-              // Start playing preview if ref exists
-              if (videoRefs.current[index]) {
-                videoRefs.current[index]?.play().catch(console.error);
-              }
-              resolve();
-            }
-          };
-          
-          const handleError = () => {
-            setAvatars(prev => prev.map(a => 
-              a.id === avatar.id ? { ...a, loadState: 'error' } : a
-            ));
-            reject();
-          };
-          
-          // Add event listeners
-          idleVideo.addEventListener('canplaythrough', handleLoad);
-          greetingVideo.addEventListener('canplaythrough', handleLoad);
-          idleVideo.addEventListener('error', handleError);
-          greetingVideo.addEventListener('error', handleError);
-          
-          // Start loading
-          idleVideo.load();
-          greetingVideo.load();
-        });
-      });
-
-      try {
-        await Promise.all(preloadPromises);
-        console.log('All avatar videos preloaded successfully');
-      } catch (error) {
-        console.error('Error preloading avatar videos:', error);
-      } finally {
-        setPreloading(false);
-      }
-    };
-
-    preloadVideos();
-
-    // Cleanup
-    return () => {
-      videoRefs.current.forEach(videoRef => {
-        if (videoRef) {
-          videoRef.pause();
-          videoRef.src = '';
-          videoRef.load();
-        }
-      });
-    };
-  }, []);
-
-  const handleJoinCall = () => {
-    if (selectedAvatar && hasPermissions) {
-      // Store full avatar data for call page
-      localStorage.setItem('selectedAvatar', JSON.stringify(selectedAvatar));
+      // Only navigate after greeting starts playing
       router.push('/call');
+    } catch (error) {
+      console.error('Error selecting avatar:', error);
+      // TODO: Show error toast
     }
   };
 
+  // Check for existing selection
+  useEffect(() => {
+    const savedAvatarId = typeof window !== 'undefined' 
+      ? localStorage.getItem('selectedAvatar')
+      : null;
+      
+    if (savedAvatarId) {
+      router.push('/call');
+    }
+  }, [router]);
+
   return (
-    <main className={`min-h-screen transition-colors ${darkMode ? 'bg-black' : 'bg-white'}`}>
-      <div className="max-w-6xl mx-auto px-4 py-12 relative">
+    <main className={`min-h-screen ${darkMode ? 'bg-black' : 'bg-white'}`}>
+      <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className={`text-sm font-semibold tracking-wide mb-4 
-            ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            CHOOSE YOUR AVATAR
+        <div className="text-center mb-12">
+          <h1 className={`text-4xl font-bold mb-4 
+            ${darkMode ? 'text-white' : 'text-gray-900'}`}
+          >
+            Choose Your Avatar
           </h1>
-          <p className={`text-lg font-light 
-            ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Select an AI avatar for your video call
+          <p className={`text-xl 
+            ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
+          >
+            Select an AI companion that matches your style
           </p>
+
           <div className="mt-6 flex items-center justify-center gap-4">
             <select
               value={detectedLanguage}
@@ -170,160 +174,106 @@ export default function AvatarSelectionPage() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => setIsListening(!isListening)}
-              className={`p-3 rounded-full transition-all duration-200
-                ${isListening 
-                  ? 'bg-red-500 text-white animate-pulse' 
-                  : `${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}`}
-            >
-              <svg className="w-5 h-5" fill="none" strokeLinecap="round" 
-                   strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            </button>
           </div>
-          <VoiceInput
-            isListening={isListening}
-            onListeningChange={setIsListening}
-            className="mt-4"
-          />
-          {isProcessingVoice && (
-            <p className={`mt-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Processing voice input...
-            </p>
-          )}
-          {transcribedText && (
-            <p className={`mt-2 text-sm ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-              {transcribedText}
-            </p>
-          )}
         </div>
 
         {/* Permission Error Alert */}
         {permissionError && (
-          <div className={`max-w-md mx-auto mb-8 px-4 py-3 rounded-lg text-center border
+          <div className={`max-w-md mx-auto mb-8 px-4 py-3 rounded-lg text-center
             ${darkMode 
-              ? 'bg-red-900/20 border-red-800/50' 
-              : 'bg-red-50 border-red-200'}`}>
-            <p className={`mb-3 text-base
-              ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-              Camera and microphone are required to join the call.
+              ? 'bg-red-900/20 border border-red-800/50' 
+              : 'bg-red-50 border border-red-200'}`}
+          >
+            <p className={`text-base ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+              Camera and microphone access is required to continue
             </p>
             <button
               onClick={requestPermissions}
-              className={`text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200
+              className={`mt-2 px-4 py-2 rounded-lg text-sm font-medium
                 ${darkMode 
                   ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' 
-                  : 'bg-red-50 text-red-600 hover:bg-red-100'}`}>
-              Try again
+                  : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+            >
+              Allow Access
             </button>
           </div>
         )}
 
-        {/* Loading State */}
-        {preloading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto animate-pulse">
+        {/* Avatar Grid */}
+        {avatars.length === 0 ? (
+          // Loading skeleton
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="aspect-video rounded-lg bg-gray-800/50" />
+              <div key={i} className="relative aspect-video rounded-xl overflow-hidden">
+                <div className={`w-full h-full animate-pulse 
+                  ${darkMode ? 'bg-gray-800/50' : 'bg-gray-100'}`} 
+                />
+              </div>
             ))}
           </div>
         ) : (
-          /* Avatar Grid */
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
-            {avatars.map((avatar, index) => (
-            <div 
-              key={avatar.id}
-              onClick={() => setSelectedAvatar(avatar)}
-              className={`group aspect-video rounded-lg overflow-hidden cursor-pointer 
-                transition-all duration-300 ease-out transform
-                ${selectedAvatar?.id === avatar.id 
-                  ? `ring-4 ${darkMode ? 'ring-blue-400 scale-[1.02]' : 'ring-blue-500 scale-[1.02]'}`
-                  : `ring-1 ${darkMode 
-                      ? 'ring-gray-800 hover:ring-gray-700' 
-                      : 'ring-gray-200 hover:ring-gray-300'} hover:scale-[1.01]`
-                }`}
-            >
-              {/* Loading Shimmer */}
-              {avatar.loadState === 'loading' && (
-                <div className={`w-full h-full animate-pulse
-                  ${darkMode ? 'bg-gray-800/80' : 'bg-gray-100'}`}>
-                  <div className="h-full flex items-center justify-center">
-                    <svg className={`w-8 h-8 animate-spin ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} 
-                         xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" 
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                      </path>
-                    </svg>
-                  </div>
-                </div>
-              )}
-              
-              {/* Error State */}
-              {avatar.loadState === 'error' && (
-                <div className={`w-full h-full flex items-center justify-center
-                  ${darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
-                  <span className="text-sm">Failed to load</span>
-                </div>
-              )}
-              
-              {/* Avatar Video */}
-              <video 
-                ref={(el) => { videoRefs.current[index] = el }}
-                src={avatar.videoUrl}
-                className={`w-full h-full object-cover transition-all duration-300
-                  ${avatar.loadState === 'loaded' ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
-                autoPlay
-                muted
-                loop
-                playsInline
-              />
-            </div>
-          ))}
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {avatars.map(avatar => (
+              <div key={avatar.id} className="relative">
+                <AvatarCard
+                  avatar={avatar}
+                  isSelected={avatar.id === currentAvatarId}
+                  onSelect={handleSelectAvatar}
+                  isLoading={isLoading && avatar.id === currentAvatarId}
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Action Button */}
-        <div className="mt-16 text-center">
+        {/* Action Buttons */}
+        <div className="mt-12 text-center">
           {!hasPermissions ? (
             <button
               onClick={requestPermissions}
-              disabled={selectedAvatar === null}
-              className={`inline-flex items-center space-x-2 px-8 py-3.5 rounded-lg text-lg
-                transition-all duration-200 ease-out transform
-                ${selectedAvatar !== null
-                  ? 'bg-blue-500 text-white hover:bg-blue-600 active:scale-[0.98]'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800/50'
-                }`}
+              aria-label="Enable camera and microphone access"
+              className={`px-8 py-3 rounded-lg text-lg font-medium
+                transition-all duration-200 transform flex items-center justify-center gap-2
+                ${darkMode 
+                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700'}
+                active:scale-[0.98]`}
             >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
               <span>Enable Camera & Mic</span>
             </button>
           ) : (
             <button
-              onClick={handleJoinCall}
-              className="inline-flex items-center space-x-2 px-8 py-3.5 rounded-lg text-lg
-                bg-blue-500 text-white hover:bg-blue-600 transition-all duration-200 
-                ease-out transform active:scale-[0.98]"
+              onClick={() => currentAvatarId && router.push('/call')}
+              disabled={!currentAvatarId}
+              aria-label={currentAvatarId ? "Start video call" : "Select an avatar first"}
+              className={`px-8 py-3 rounded-lg text-lg font-medium
+                transition-all duration-200 transform flex items-center justify-center gap-2
+                ${currentAvatarId
+                  ? `${darkMode 
+                      ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'}
+                     active:scale-[0.98]`
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
             >
-              <span>Join Call</span>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                      d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
+              <span>Start Call</span>
             </button>
           )}
         </div>
 
         {/* Webcam Preview */}
         {hasPermissions && (
-          <div className={`fixed bottom-6 right-6 w-1/5 min-w-[240px] max-w-[320px] 
-            aspect-video rounded-lg overflow-hidden shadow-lg 
-            transition-all duration-300 ease-out transform origin-bottom-right
-            backdrop-blur-sm backdrop-saturate-150 ring-1
-            ${darkMode 
-              ? 'ring-white/10 shadow-black/20' 
-              : 'ring-black/10 shadow-black/5'}`}>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 
-              transition-opacity duration-300 group-hover:opacity-100" />
+          <div className="fixed bottom-6 right-6 w-1/5 min-w-[240px] max-w-[320px] 
+            aspect-video rounded-lg overflow-hidden shadow-lg">
             <video
               ref={webcamRef}
               autoPlay
@@ -333,6 +283,14 @@ export default function AvatarSelectionPage() {
             />
           </div>
         )}
+
+        {/* Hidden Video Element for Preloading */}
+        <video
+          ref={videoRef}
+          className="hidden"
+          playsInline
+          muted
+        />
       </div>
     </main>
   );
