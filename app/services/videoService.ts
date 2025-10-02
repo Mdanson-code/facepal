@@ -204,9 +204,9 @@ class VideoService {
   private async lipSync(avatarId: string, audioUrl: string, text: string): Promise<string> {
     // Example URL pattern - replace with your actual lip sync service
     const lipSyncUrl = `https://lipsync.facepal.ai/generate`;
-    
-    // For demo, return a dummy video URL
-    return `/avatars/${avatarId}-talking-${Date.now()}.mp4`;
+
+    // For demo, reuse greeting clip to avoid 404s and heavy generation
+    return `/avatars/${avatarId}/greeting.mp4`;
   }
 
   async switchToTalking(avatarId: string, text: string, language: string, responseId: string): Promise<string> {

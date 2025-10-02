@@ -14,7 +14,7 @@ export const avatars: Avatar[] = [
     id: 'sarah',
     name: 'Sarah',
     description: 'Friendly and professional',
-    previewUrl: '/avatars/sarah/preview.jpg',
+    previewUrl: '/avatars/sarah/preview.png',
     idleUrl: '/avatars/sarah/idle.mp4',
     greetingUrl: '/avatars/sarah/greeting.mp4'
   },
@@ -22,7 +22,7 @@ export const avatars: Avatar[] = [
     id: 'michael',
     name: 'Michael',
     description: 'Confident and direct',
-    previewUrl: '/avatars/michael/preview.jpg',
+    previewUrl: '/avatars/michael/preview.png',
     idleUrl: '/avatars/michael/idle.mp4',
     greetingUrl: '/avatars/michael/greeting.mp4'
   },
@@ -30,7 +30,7 @@ export const avatars: Avatar[] = [
     id: 'james',
     name: 'James',
     description: 'Warm and empathetic',
-    previewUrl: '/avatars/james/preview.jpg',
+    previewUrl: '/avatars/james/preview.png',
     idleUrl: '/avatars/james/idle.mp4',
     greetingUrl: '/avatars/james/greeting.mp4'
   },
@@ -38,7 +38,7 @@ export const avatars: Avatar[] = [
     id: 'emily',
     name: 'Emily',
     description: 'Technical expert',
-    previewUrl: '/avatars/emily/preview.jpg',
+    previewUrl: '/avatars/emily/preview.png',
     idleUrl: '/avatars/emily/idle.mp4',
     greetingUrl: '/avatars/emily/greeting.mp4'
   },
@@ -46,7 +46,7 @@ export const avatars: Avatar[] = [
     id: 'lisa',
     name: 'Lisa',
     description: 'Creative and dynamic',
-    previewUrl: '/avatars/lisa/preview.jpg',
+    previewUrl: '/avatars/lisa/preview.png',
     idleUrl: '/avatars/lisa/idle.mp4',
     greetingUrl: '/avatars/lisa/greeting.mp4'
   },
@@ -54,7 +54,7 @@ export const avatars: Avatar[] = [
     id: 'david',
     name: 'David',
     description: 'Analytical and precise',
-    previewUrl: '/avatars/david/preview.jpg',
+    previewUrl: '/avatars/david/preview.png',
     idleUrl: '/avatars/david/idle.mp4',
     greetingUrl: '/avatars/david/greeting.mp4'
   }

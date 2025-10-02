@@ -215,6 +215,10 @@ export class VideoManager {
       localStorage.setItem('selectedAvatar', avatarId);
     }
     this.setState({ currentAvatarId: avatarId });
+    // Ensure idle video is visible immediately after selecting
+    if (this.videoElement) {
+      this.switchToIdle();
+    }
   }
 
   private startCacheCleanup() {

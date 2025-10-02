@@ -22,42 +22,42 @@ const AVATARS: Avatar[] = [
     id: 'sarah', 
     name: 'Sarah', 
     description: 'Friendly and professional', 
-    previewUrl: '/avatars/sarah/preview.jpg',
+    previewUrl: '/avatars/sarah/preview.png',
     languages: ['en', 'sw', 'es']
   },
   { 
     id: 'michael', 
     name: 'Michael', 
     description: 'Confident and direct', 
-    previewUrl: '/avatars/michael/preview.jpg',
+    previewUrl: '/avatars/michael/preview.png',
     languages: ['en', 'sw']
   },
   { 
     id: 'james', 
     name: 'James', 
     description: 'Warm and empathetic', 
-    previewUrl: '/avatars/james/preview.jpg',
+    previewUrl: '/avatars/james/preview.png',
     languages: ['en', 'es']
   },
   { 
     id: 'emily', 
     name: 'Emily', 
     description: 'Technical expert', 
-    previewUrl: '/avatars/emily/preview.jpg',
+    previewUrl: '/avatars/emily/preview.png',
     languages: ['en', 'es']
   },
   { 
     id: 'lisa', 
     name: 'Lisa', 
     description: 'Creative and dynamic', 
-    previewUrl: '/avatars/lisa/preview.jpg',
+    previewUrl: '/avatars/lisa/preview.png',
     languages: ['en', 'sw', 'es']
   },
   { 
     id: 'david', 
     name: 'David', 
     description: 'Analytical and precise', 
-    previewUrl: '/avatars/david/preview.jpg',
+    previewUrl: '/avatars/david/preview.png',
     languages: ['en', 'es']
   }
 ];

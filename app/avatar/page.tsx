@@ -117,32 +117,17 @@ export default function AvatarSelectionPage() {
     };
   }, [stream]);
 
-  // Handle avatar selection
+  // Handle avatar selection (do not auto-navigate; let user click Start Call)
   const handleSelectAvatar = async (avatar: Avatar) => {
     try {
       await setCurrentAvatar(avatar.id);
-      try {
-        await playGreeting(avatar.id);
-      } catch (err) {
-        console.error('Greeting playback failed, proceeding to call page:', err);
-      }
-      router.push('/call');
+      // Avoid auto-playing greeting to reduce initial lag
     } catch (error) {
       console.error('Error selecting avatar:', error);
-      router.push('/call');
     }
   };
 
-  // Check for existing selection
-  useEffect(() => {
-    const savedAvatarId = typeof window !== 'undefined' 
-      ? localStorage.getItem('selectedAvatar')
-      : null;
-      
-    if (savedAvatarId) {
-      router.push('/call');
-    }
-  }, [router]);
+  // Do not auto-redirect on existing selection to allow choosing or previewing
 
   return (
     <main className={`min-h-screen ${darkMode ? 'bg-black' : 'bg-white'}`}>
@@ -164,6 +149,7 @@ export default function AvatarSelectionPage() {
             <select
               value={detectedLanguage}
               onChange={(e) => setLanguage(e.target.value)}
+              aria-label="Preferred language"
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
                 ${darkMode 
                   ? 'bg-gray-900 text-gray-300 border border-gray-800' 
